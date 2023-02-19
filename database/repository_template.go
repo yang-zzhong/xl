@@ -91,7 +91,7 @@ import (
 	"context"
 	"time"
 	"gorm.io/gorm"
-	"udious.com/mockingbird/pkg/database"
+	"github.com/yang-zzhong/xl/database"
 	"github.com/google/uuid"
 )
 
@@ -172,7 +172,7 @@ package __package_name__
 
 import (
 	"context"
-	"udious.com/mockingbird/pkg/database"
+	"github.com/yang-zzhong/xl/database"
 )
 
 // repository
@@ -234,7 +234,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
-	"udious.com/mockingbird/pkg/database"
+	"github.com/yang-zzhong/xl/database"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
