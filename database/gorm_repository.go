@@ -3,7 +3,11 @@ package database
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
+
+	"github.com/yang-zzhong/structs"
+	"github.com/yang-zzhong/xl/utils"
 
 	"gorm.io/gorm"
 )
@@ -28,6 +32,10 @@ var operatorMap = map[Operator]string{
 	IN:  "IN",
 }
 
+type tableNamer interface {
+	TableName() string
+}
+
 type GormStack interface {
 	Push(db *gorm.DB)
 	Pop()
@@ -46,19 +54,20 @@ func (db *gormRepository) recentDB() *gorm.DB {
 }
 
 func (db *gormRepository) First(ctx context.Context, v interface{}, opts ...MatchOption) error {
-	selector := db.recentDB().Model(v)
+	selector, result := db.model(v)
 	db.applyOptions(selector, opts...)
-	return selector.First(v).Error
+	return selector.First(result).Error
 }
 
 func (db *gormRepository) Find(ctx context.Context, v interface{}, opts ...MatchOption) error {
-	selector := db.recentDB().Model(v)
+	selector, result := db.model(v)
 	db.applyOptions(selector, opts...)
-	return selector.Find(v).Error
+	return selector.Find(result).Error
 }
 
+// db.Count(ctx, database.M(result, &User{}))
 func (db *gormRepository) Count(ctx context.Context, v interface{}, result *int64, opts ...MatchOption) error {
-	selector := db.recentDB().Model(v)
+	selector, _ := db.model(v)
 	db.applyOptions(selector, opts...)
 	return selector.Count(result).Error
 }
@@ -81,6 +90,17 @@ func (db *gormRepository) UpdateFields(ctx context.Context, v interface{}, field
 	updator := db.recentDB().Model(v)
 	db.applyOptions(updator, opts...)
 	return updator.UpdateColumns(fields).Error
+}
+
+func (repo *gormRepository) tableName(v interface{}) string {
+	if t, ok := v.(tableNamer); ok {
+		return t.TableName()
+	}
+	ptrv := reflect.ValueOf(v)
+	if ptrv.Kind() == reflect.Ptr {
+		ptrv = ptrv.Elem()
+	}
+	return repo.recentDB().NamingStrategy.TableName(ptrv.Type().Name())
 }
 
 func (repo *gormRepository) Push(db *gorm.DB) {
@@ -129,11 +149,63 @@ func (repo *gormRepository) compileMatchOptions(opts MatchOptions) (string, []in
 			if i > 0 {
 				ret += " AND "
 			}
+			if field, ok := opt.Value.(Field); ok {
+				ret += fmt.Sprintf("%s %s %s", opt.Field, operatorMap[opt.Operator], field)
+				continue
+			}
 			values = append(values, opt.Value)
-			ret += fmt.Sprintf("`%s` %s ?", opt.Field, operatorMap[opt.Operator])
+			ret += fmt.Sprintf("%s %s ?", opt.Field, operatorMap[opt.Operator])
 		}
 	}
 	return ret, values
+}
+
+func (repo *gormRepository) model(v interface{}) (*gorm.DB, interface{}) {
+	m, ok := v.(*Model)
+	if !ok {
+		return repo.recentDB().Model(v), v
+	}
+	model := repo.recentDB().Model(m.From)
+	for _, join := range m.Joins {
+		str := ""
+		switch join.Type {
+		case LeftJoin:
+			str += "LEFT JOIN "
+		case RightJoin:
+			str += "RIGHT JOIN "
+		case InnerJoin:
+			str += "Inner JOIN "
+		}
+		str += repo.tableName(join.Model) + " ON "
+		condi, values := repo.compileMatchOptions(join.Opts)
+		str += condi
+		model.Joins(str, values...)
+	}
+	if m.Grp != nil {
+		model.Group(m.Grp.By)
+		if m.Grp.Having != nil {
+			condi, values := repo.compileMatchOptions(*m.Grp.Having)
+			model.Having(condi, values...)
+		}
+	}
+	if m.Result == nil {
+		return model, nil
+	}
+	vm := reflect.ValueOf(m.Result)
+	if vm.Kind() == reflect.Ptr {
+		vm = vm.Elem()
+	}
+	if vm.Kind() != reflect.Struct {
+		return model, m.Result
+	}
+	fields := structs.Fields(m.Result)
+	fieldNames := make([]string, len(fields))
+	for j, f := range fields {
+		fieldNames[j] = fmt.Sprintf("%s AS %s", f.Tag("field"), utils.ToSnakeCase(f.Name()))
+	}
+	model.Select(fieldNames)
+
+	return model, m.Result
 }
 
 func (repo *gormRepository) applyOptions(db *gorm.DB, opts ...MatchOption) {
@@ -142,9 +214,9 @@ func (repo *gormRepository) applyOptions(db *gorm.DB, opts ...MatchOption) {
 	for _, match := range opt.Matches {
 		switch match.Operator {
 		case NULL:
-			db.Where(fmt.Sprintf("`%s` IS NULL", match.Field))
+			db.Where(fmt.Sprintf("%s IS NULL", match.Field))
 		case NOTNULL:
-			db.Where(fmt.Sprintf("`%s` IS NOT NULL", match.Field))
+			db.Where(fmt.Sprintf("%s IS NOT NULL", match.Field))
 		case OR:
 			str, values := repo.compileMatchOptions(*match.Value.(*MatchOptions))
 			db.Where(fmt.Sprintf("OR (%s)", str), values...)
@@ -152,7 +224,7 @@ func (repo *gormRepository) applyOptions(db *gorm.DB, opts ...MatchOption) {
 			str, values := repo.compileMatchOptions(*match.Value.(*MatchOptions))
 			db.Where(fmt.Sprintf("AND (%s)", str), values...)
 		default:
-			db.Where(fmt.Sprintf("`%s` %s ?", match.Field, operatorMap[match.Operator]), match.Value)
+			db.Where(fmt.Sprintf("%s %s ?", match.Field, operatorMap[match.Operator]), match.Value)
 		}
 	}
 	if len(opt.Sort) > 0 {

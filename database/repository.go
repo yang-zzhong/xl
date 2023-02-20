@@ -17,6 +17,10 @@ const (
 
 	OR
 	AND
+
+	LeftJoin  = 0
+	InnerJoin = 1
+	RightJoin = 2
 )
 
 type MatchItem struct {
@@ -26,6 +30,67 @@ type MatchItem struct {
 }
 
 type Fields map[string]interface{}
+
+type Join struct {
+	Model interface{}
+	Opts  MatchOptions
+	Type  int
+}
+
+type Group struct {
+	By     string
+	Having *MatchOptions
+}
+
+type Model struct {
+	Result interface{}
+	From   interface{}
+	Joins  []Join
+	Grp    *Group
+}
+
+func M(result interface{}, froms ...interface{}) *Model {
+	from := result
+	if len(froms) > 0 {
+		from = froms[0]
+	}
+	return &Model{Result: result, From: from}
+}
+
+func (m *Model) Group(group string, having ...MatchOption) *Model {
+	m.Grp = &Group{By: group}
+	if len(having) > 0 {
+		m.Grp.Having = &MatchOptions{}
+		for _, apply := range having {
+			apply(m.Grp.Having)
+		}
+	}
+	return m
+}
+
+func (m *Model) With(model interface{}, opts ...MatchOption) *Model {
+	return m.with(model, LeftJoin, opts...)
+}
+
+func (m *Model) RWith(model interface{}, opts ...MatchOption) *Model {
+	return m.with(model, RightJoin, opts...)
+}
+
+func (m *Model) IWith(model interface{}, opts ...MatchOption) *Model {
+	return m.with(model, InnerJoin, opts...)
+}
+
+func (m *Model) with(model interface{}, j int, opts ...MatchOption) *Model {
+	mj := Join{
+		Model: model,
+		Type:  j,
+	}
+	for _, apply := range opts {
+		apply(&mj.Opts)
+	}
+	m.Joins = append(m.Joins, mj)
+	return m
+}
 
 type MatchOptions struct {
 	Matches []MatchItem
@@ -82,6 +147,10 @@ func (opts *MatchOptions) GT(field string, val interface{}) *MatchOptions {
 
 func (opts *MatchOptions) GTE(field string, val interface{}) *MatchOptions {
 	return opts.oper(field, GTE, val)
+}
+
+func (opts *MatchOptions) IN(field string, val interface{}) *MatchOptions {
+	return opts.oper(field, IN, val)
 }
 
 func (opts *MatchOptions) Null(field string) *MatchOptions {
