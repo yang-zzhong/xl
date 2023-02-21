@@ -12,8 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type Field string
-
 func (f Field) DESC() string {
 	return "`" + string(f) + "` DESC"
 }
@@ -45,6 +43,31 @@ type gormRepository struct {
 	db []*gorm.DB
 }
 
+// NewGormRepository
+// usage:
+//   repo := NewGormRepository(db)
+//   // find
+//   var users []User
+//   ctx := context.Background()
+//   err := repo.Find(ctx, &users, Role("member"), Limit(20))
+//   // join
+//   var books []struct {
+//       ID 		string `field:"books.id"`
+//       Name 		string `field:"books.name"`
+//       AuthorID 	string `field:"users.id"`
+//       AuthorName string `field:"users.name"`
+// 	 }{}
+//   func AuthorID(authorID interface{}) MatchOption {
+//   	return func(opts *MatchOptions) {
+//   		vo := reflect.ValueOf(authorID)
+//   		if vo.Kind() == reflect.Slice {
+//   			opts.IN("book.author_id", authorID)
+//   			return
+//   		}
+//   		opts.EQ("book.author_id", authorID)
+//   	}
+//   }
+//   err := repo.Find(ctx, database.M(&books, &Book{}).With(&User{}, AuthorID(Field("users.id"))), Limit(20))
 func NewGormRepository(db *gorm.DB) Repository {
 	return &gormRepository{db: []*gorm.DB{db}}
 }
@@ -192,7 +215,7 @@ func (repo *gormRepository) model(v interface{}) (*gorm.DB, interface{}) {
 		return model, nil
 	}
 	vm := reflect.ValueOf(m.Result)
-	if vm.Kind() == reflect.Ptr {
+	for vm.Kind() == reflect.Slice || vm.Kind() == reflect.Array || vm.Kind() == reflect.Ptr {
 		vm = vm.Elem()
 	}
 	if vm.Kind() != reflect.Struct {

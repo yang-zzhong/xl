@@ -29,6 +29,8 @@ type MatchItem struct {
 	Value    interface{}
 }
 
+type Field string
+
 type Fields map[string]interface{}
 
 type Join struct {
