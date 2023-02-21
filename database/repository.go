@@ -1,8 +1,15 @@
 package database
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type Operator int
+
+var (
+	ErrRecordNotFound = errors.New("record not found")
+)
 
 const (
 	EQ Operator = iota
