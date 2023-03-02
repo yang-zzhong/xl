@@ -154,12 +154,12 @@ func (repo *gormRepository) compileMatchOptions(opts MatchOptions) (string, []in
 			if i > 0 {
 				ret += " AND "
 			}
-			ret += fmt.Sprintf("`%s` IS NULL", opt.Field)
+			ret += fmt.Sprintf("%s IS NULL", opt.Field)
 		case NOTNULL:
 			if i > 0 {
 				ret += " AND "
 			}
-			ret += fmt.Sprintf("`%s` IS NULL", opt.Field)
+			ret += fmt.Sprintf("%s IS NULL", opt.Field)
 		case OR:
 			str, subValues := repo.compileMatchOptions(opt.Value.(MatchOptions))
 			ret += fmt.Sprintf(" OR (%s)", str)
